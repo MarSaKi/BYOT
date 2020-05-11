@@ -27,8 +27,6 @@ def parse_args():
                         help='dataset choice')
     parser.add_argument('--epoch', default=200, type=int,
                         help='number of total iterations (default: 64,000)')
-    parser.add_argument('--warm_up_epoch', default=30, type=int,
-                        help='epoch without feature map KD')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='mini-batch size (default: 64)')
     parser.add_argument('--lr', default=0.1, type=float,
@@ -41,14 +39,10 @@ def parse_args():
                         help='weight decay (default: 1e-4)')
     parser.add_argument('--report_freq', default=200, type=int,
                         help='report frequency (default: 20)')
-    parser.add_argument('--exp_dir', default='resnet34_KD', type=str,
+    parser.add_argument('--exp_dir', default='resnet34_DS', type=str,
                         help='folder to save the checkpoints')
 
     # kd parameter
-    parser.add_argument('--temperature', default=3, type=int,
-                        help='temperature to smooth the logits')
-    parser.add_argument('--alpha', default=0.1, type=float,
-                        help='weight of kd loss')
     parser.add_argument('--beta', default=1e-6, type=float,
                         help='weight of feature loss')
 
@@ -89,10 +83,10 @@ def main():
     else:
         raise NotImplementedError
 
-    '''if not torch.cuda.is_available():
+    if not torch.cuda.is_available():
         args.batch_size = 1
         train_data = torch.utils.data.Subset(train_data, range(1))
-        valid_data = torch.utils.data.Subset(valid_data, range(1))'''
+        valid_data = torch.utils.data.Subset(valid_data, range(1))
 
     train_queue = torch.utils.data.DataLoader(
         train_data,
@@ -121,10 +115,7 @@ def main():
         lr, beta = utils.adjust_learning_rate(args, optimizer, epoch)
         logging.info('epoch {} lr {:.2e} beta {:.2e}'.format(epoch, lr, beta))
 
-        if epoch < args.warm_up_epoch:
-            acc1, acc2, acc3, acc4 = train(args, beta, train_queue, model, criterion, optimizer, device, FeatureLoss=False)
-        else:
-            acc1, acc2, acc3, acc4 = train(args, beta, train_queue, model, criterion, optimizer, device, FeatureLoss=True)
+        acc1, acc2, acc3, acc4 = train(args, train_queue, model, criterion, optimizer, device)
         logging.info('train acc {:.4f} {:.4f} {:.4f} {:.4f}'.format(acc1, acc2, acc3, acc4))
 
         acc1, acc2, acc3, acc4 = infer(valid_queue, model, device)
@@ -133,7 +124,7 @@ def main():
         if (epoch+1)%50 == 0:
             utils.save_model(model, os.path.join(exp_dir, 'latest.pt'))
 
-def train(args, beta, train_queue, model, criterion, optimizer, device, FeatureLoss):
+def train(args, train_queue, model, criterion, optimizer, device):
     model.train()
     avg_acc1, avg_acc2, avg_acc3, avg_acc4 = 0, 0, 0, 0
     batch_num = len(train_queue)
@@ -145,32 +136,17 @@ def train(args, beta, train_queue, model, criterion, optimizer, device, FeatureL
         optimizer.zero_grad()
 
         logits1, logits2, logits3, logits4, \
-        fea1, fea2, fea3, fea4 = model(input)
+        _, _, _, _ = model(input)
 
         PLoss1, PLoss2, PLoss3, PLoss4 = criterion(logits1, target), criterion(logits2, target), \
                                          criterion(logits3, target), criterion(logits4, target)
-
-        total_logits = [logits1, logits2, logits3, logits4]
-        KLoss1, KLoss2, KLoss3, KLoss4 = KDcriterion(args, total_logits)
-
-        FLoss1, FLoss2, FLoss3 = torch.zeros(1), torch.zeros(1), torch.zeros(1)
-        if FeatureLoss == True:
-            FLoss1, FLoss2, FLoss3 = utils.feature_loss_function(fea1, fea4), \
-                                     utils.feature_loss_function(fea2, fea4), \
-                                     utils.feature_loss_function(fea3, fea4)
 
         acc1, acc2, acc3, acc4 = utils.accuracy(logits1.data, target, topk=(1,)), \
                                  utils.accuracy(logits2.data, target, topk=(1,)), \
                                  utils.accuracy(logits3.data, target, topk=(1,)), \
                                  utils.accuracy(logits4.data, target, topk=(1,))
 
-        PLoss = (1 - args.alpha) * (PLoss1 + PLoss2 + PLoss3 + PLoss4)
-        KLoss = args.alpha * (KLoss1 + KLoss2 + KLoss3 + KLoss4)
-        FLoss = beta * (FLoss1 + FLoss2 + FLoss3)
-        if FeatureLoss == True:
-            total_loss = PLoss + KLoss + FLoss
-        else:
-            total_loss = PLoss + KLoss
+        total_loss = PLoss1 + PLoss2 + PLoss3 + PLoss4
 
         total_loss.backward()
         optimizer.step()
@@ -181,8 +157,8 @@ def train(args, beta, train_queue, model, criterion, optimizer, device, FeatureL
         avg_acc4 += acc4
 
         if batch % args.report_freq == 0:
-            logging.info('train {:0>3d} loss {:.4f} {:.4f} {:.4f} {:.4f} acc {:.4f} {:.4f} {:.4f} {:.4f}'.format(batch,
-                                                                                            total_loss.item(), PLoss.item(), KLoss.item(), FLoss.item(),
+            logging.info('train {:0>3d} loss {:.4f} acc {:.4f} {:.4f} {:.4f} {:.4f}'.format(batch,
+                                                                                            total_loss.item(),
                                                                                             acc1, acc2, acc3, acc4))
 
     return avg_acc1 / batch_num, avg_acc2 / batch_num, avg_acc3 / batch_num, avg_acc4 / batch_num
@@ -210,16 +186,6 @@ def infer(valid_queue, model, device):
         avg_acc4 += acc4
 
     return avg_acc1 / batch_num, avg_acc2 / batch_num, avg_acc3 / batch_num, avg_acc4 / batch_num
-
-def KDcriterion(args, total_logits):
-    N = len(total_logits)
-    KLoss = [0 for i in range(N)]
-    for i in range(N):
-        for j in range(N):
-            if j != i:
-                KLoss[i] += utils.kd_loss_function(total_logits[i], total_logits[j], args)
-        KLoss[i] /= (N-1)
-    return KLoss
 
 if __name__ == '__main__':
     main()
