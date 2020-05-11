@@ -1,0 +1,7 @@
+data/cifar-100-python.tar.gz
+data/cifar-100-python/
+train.py
+dataset/
+__pycache__
+.idea
+.DS_Store

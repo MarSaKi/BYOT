@@ -1,0 +1,1 @@
+python BYOT.py --gpu 0 --batch_size 64
