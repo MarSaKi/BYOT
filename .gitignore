@@ -1,7 +1,8 @@
 data/cifar-100-python.tar.gz
 data/cifar-100-python/
+data/cifar-10-batches-py.zip
+data/cifar-10-batches-py/
 train.py
-dataset/
 __pycache__
 .idea
 .DS_Store

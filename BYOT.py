@@ -86,6 +86,10 @@ def main():
         train_transform, valid_transform = utils.cifar100_transform()
         train_data = Datasets.CIFAR100(root=args.data_dir, train=True, transform=train_transform, download=True)
         valid_data = Datasets.CIFAR100(root=args.data_dir, train=False, transform=valid_transform, download=True)
+    elif args.dataset == 'cifar10':
+        train_transform, valid_transform = utils.cifar10_transform()
+        train_data = Datasets.CIFAR10(root=args.data_dir, train=True, transform=train_transform, download=True)
+        valid_data = Datasets.CIFAR10(root=args.data_dir, train=False, transform=valid_transform, download=True)
     else:
         raise NotImplementedError
 
@@ -111,6 +115,8 @@ def main():
 
     if args.dataset == 'cifar100':
         model = resnet.multi_resnet34_kd(100).to(device)
+    elif args.dataset == 'cifar10':
+        model = resnet.multi_resnet34_kd(10).to(device)
     else:
         raise NotImplementedError
 

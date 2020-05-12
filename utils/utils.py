@@ -2,6 +2,23 @@ import torch
 import numpy as np
 import torchvision.transforms as transforms
 
+def cifar10_transform():
+  CIFAR_MEAN = [0.49139968, 0.48215827, 0.44653124]
+  CIFAR_STD = [0.24703233, 0.24348505, 0.26158768]
+
+  train_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+  ])
+
+  valid_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+    ])
+  return train_transform, valid_transform
+
 def cifar100_transform():
     CIFAR_MEAN = [0.4914, 0.4822, 0.4465]
     CIFAR_STD = [0.2023, 0.1994, 0.2010]
